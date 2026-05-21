@@ -28,6 +28,7 @@
       },
       "package": "com.fridgenotes.app",
       "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
@@ -50,7 +51,11 @@
       ]
     ],
     "extra": {
-      "apiUrl": "http://192.168.66.73:5009"
-    }
+      "apiUrl": "http://192.168.66.73:5009",
+      "eas": {
+        "projectId": "25bd1647-e911-4966-a5e7-9f2e1e40b7ee"
+      }
+    },
+    "owner": "sc00ter"
   }
 }
