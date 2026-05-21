@@ -28,7 +28,6 @@
       },
       "package": "com.fridgenotes.app",
       "edgeToEdgeEnabled": true,
-      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
@@ -47,6 +46,15 @@
           "color": "#3b82f6",
           "defaultChannel": "reminders",
           "sounds": []
+        }
+      ],
+      [
+        "expo-build-properties",
+      "@react-native-cookies/cookies",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
     ],

@@ -1,5 +1,6 @@
 import { getServerUrl } from './config';
 import { Note, Label, User, ChecklistItem } from '../types';
+import CookieManager from '@react-native-cookies/cookies';
 
 class APIClient {
   private async getBaseURL(): Promise<string> {
@@ -8,13 +9,51 @@ class APIClient {
     return `${serverUrl}/api`;
   }
 
+  // Read the session cookie from the native cookie store and inject it manually.
+  // React Native's fetch does not automatically send cookies the way a browser does.
+  private async getSessionCookieHeader(baseURL: string): Promise<string> {
+    try {
+      const serverUrl = await getServerUrl();
+      if (!serverUrl) return '';
+      const cookies = await CookieManager.get(serverUrl);
+      return Object.values(cookies)
+        .map(c => `${c.name}=${c.value}`)
+        .join('; ');
+    } catch {
+      return '';
+    }
+  }
+
+  // Persist any Set-Cookie headers from a response into the native cookie store.
+  private async persistCookies(response: Response, baseURL: string): Promise<void> {
+    try {
+      const serverUrl = await getServerUrl();
+      if (!serverUrl) return;
+      const setCookie = response.headers.get('set-cookie');
+      if (!setCookie) return;
+      // Parse each directive and store via CookieManager
+      const parts = setCookie.split(';').map(s => s.trim());
+      const [nameValue] = parts;
+      const [name, value] = nameValue.split('=');
+      if (name && value) {
+        await CookieManager.set(serverUrl, { name: name.trim(), value: value.trim(), path: '/' });
+      }
+    } catch {
+      // Non-fatal — worst case the next request re-authenticates
+    }
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const baseURL = await this.getBaseURL();
     const url = `${baseURL}${endpoint}`;
+    const cookieHeader = await this.getSessionCookieHeader(baseURL);
 
     const config: RequestInit = {
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        ...options.headers,
+      },
       ...options,
     };
 
@@ -23,6 +62,7 @@ class APIClient {
     }
 
     const response = await fetch(url, config);
+    await this.persistCookies(response, baseURL);
 
     if (!response.ok) {
       let errorData: { error?: string; message?: string } = {};
