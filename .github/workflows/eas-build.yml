@@ -1,0 +1,62 @@
+name: EAS Build
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'           # e.g. v1.0.0 triggers a production build
+  workflow_dispatch:   # manual trigger from the GitHub UI
+    inputs:
+      profile:
+        description: 'Build profile'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+
+jobs:
+  build:
+    name: EAS Build (${{ github.ref_type == 'tag' && 'production' || inputs.profile || 'preview' }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Determine build profile
+        id: profile
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "profile=production" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "profile=${{ inputs.profile }}" >> $GITHUB_OUTPUT
+          else
+            echo "profile=preview" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Android APK / AAB
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ steps.profile.outputs.profile }} \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_PUBLIC_API_URL: ${{ secrets.API_URL }}
