@@ -9,6 +9,7 @@ import { RegisterScreen } from '../screens/RegisterScreen';
 import { NotesScreen } from '../screens/NotesScreen';
 import { NoteEditorScreen } from '../screens/NoteEditorScreen';
 import { ServerSetupScreen } from '../screens/ServerSetupScreen';
+import { ShareReceiverScreen } from '../screens/ShareReceiverScreen';
 import { useAuth } from '../hooks/useAuth';
 import { useNotes } from '../hooks/useNotes';
 import { useLabels } from '../hooks/useLabels';
@@ -18,6 +19,7 @@ import { useAutocomplete } from '../hooks/useAutocomplete';
 import { getServerUrl, clearServerUrl } from '../lib/config';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { ErrorToast } from '../components/ErrorToast';
+import * as Linking from 'expo-linking';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -118,6 +120,39 @@ export const RootNavigator: React.FC = () => {
       setServerConfigured(!!url);
       if (url) auth.checkAuthStatus();
     });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle incoming share intents — fired when the user shares text to FridgeNotes
+  // from another app while FridgeNotes is already running.
+  useEffect(() => {
+    const handleUrl = (event: { url: string }) => {
+      const parsed = Linking.parse(event.url);
+      const text = parsed.queryParams?.text as string | undefined;
+      if (text && navigationRef.current?.isReady()) {
+        navigationRef.current.navigate('ShareReceiver', { text });
+      }
+    };
+
+    const sub = Linking.addEventListener('url', handleUrl);
+
+    // Also handle the case where the app was cold-launched via a share intent
+    Linking.getInitialURL().then(url => {
+      if (!url) return;
+      const parsed = Linking.parse(url);
+      const text = parsed.queryParams?.text as string | undefined;
+      if (text) {
+        const tryNavigate = (attempts = 0) => {
+          if (navigationRef.current?.isReady()) {
+            navigationRef.current.navigate('ShareReceiver', { text });
+          } else if (attempts < 15) {
+            setTimeout(() => tryNavigate(attempts + 1), 200);
+          }
+        };
+        tryNavigate();
+      }
+    });
+
+    return () => sub.remove();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show splash spinner until we know whether a server URL is saved
@@ -231,6 +266,23 @@ export const RootNavigator: React.FC = () => {
                 {props => <RegisterScreen {...props} onRegister={auth.register} />}
               </Stack.Screen>
             </>
+          )}
+
+          {/* Share receiver — presented as a modal over any screen when another
+              app shares text to FridgeNotes. Only functional when authenticated. */}
+          {auth.isAuthenticated && (
+            <Stack.Screen
+              name="ShareReceiver"
+              options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+            >
+              {({ route }) => (
+                <ShareReceiverScreen
+                  route={route as any}
+                  navigation={undefined as any}
+                  onCreateNote={notes.createNote}
+                />
+              )}
+            </Stack.Screen>
           )}
         </Stack.Navigator>
       </NavigationContainer>

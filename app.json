@@ -28,6 +28,17 @@
       },
       "package": "com.fridgenotes.app",
       "edgeToEdgeEnabled": true,
+      "intentFilters": [
+        {
+          "action": "android.intent.action.SEND",
+          "autoVerify": false,
+          "data": [
+            { "mimeType": "text/plain" },
+            { "mimeType": "text/*" }
+          ],
+          "category": ["android.intent.category.DEFAULT"]
+        }
+      ],
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",

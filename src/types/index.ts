@@ -61,6 +61,7 @@ export type RootStackParamList = {
   Register: undefined;
   Main: undefined;
   NoteEditor: { noteId: number | string };
+  ShareReceiver: { text: string };
 };
 
 export type MainTabParamList = {
