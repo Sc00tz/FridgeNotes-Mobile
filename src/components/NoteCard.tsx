@@ -148,6 +148,8 @@ export const NoteCard: React.FC<Props> = ({
         <View style={styles.footerBadges}>
           {note.pinned && <Text style={styles.badge}>📌</Text>}
           {note.is_shared && <Text style={styles.badge}>👥</Text>}
+          {note.attachments && note.attachments.length > 0 && <Text style={styles.badge}>📎</Text>}
+          {note.reminder_latitude != null && <Text style={styles.badge}>📍</Text>}
         </View>
       </View>
     </TouchableOpacity>

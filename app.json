@@ -33,16 +33,26 @@
           "action": "android.intent.action.SEND",
           "autoVerify": false,
           "data": [
-            { "mimeType": "text/plain" },
-            { "mimeType": "text/*" }
+            {
+              "mimeType": "text/plain"
+            },
+            {
+              "mimeType": "text/*"
+            }
           ],
-          "category": ["android.intent.category.DEFAULT"]
+          "category": [
+            "android.intent.category.DEFAULT"
+          ]
         }
       ],
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -67,7 +77,26 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "FridgeNotes uses the microphone to record voice memos on notes."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FridgeNotes accesses your photos so you can attach images to notes.",
+          "cameraPermission": "FridgeNotes uses the camera so you can attach photos to notes."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "FridgeNotes uses your location to set location-based reminders."
+        }
+      ]
     ],
     "extra": {
       "apiUrl": "http://192.168.66.73:5009",
