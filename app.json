@@ -97,7 +97,8 @@
           "locationAlwaysAndWhenInUsePermission": "FridgeNotes uses your location to set location-based reminders."
         }
       ],
-      "./plugins/withReleaseSigning.js"
+      "./plugins/withReleaseSigning.js",
+      "expo-asset"
     ],
     "extra": {
       "apiUrl": "http://192.168.66.73:5009",
