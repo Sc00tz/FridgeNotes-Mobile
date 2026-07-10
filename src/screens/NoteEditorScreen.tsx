@@ -20,6 +20,8 @@ import { ChecklistItemAutocomplete } from '../components/ChecklistItemAutocomple
 import { LabelPickerSheet } from '../components/LabelPickerSheet';
 import { ShareSheet } from '../components/ShareSheet';
 import { ReminderPickerSheet } from '../components/ReminderPickerSheet';
+import { AttachmentSection } from '../components/AttachmentSection';
+import { LocationReminderSection } from '../components/LocationReminderSection';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NoteEditor'> & {
   note: Note;
@@ -138,6 +140,12 @@ export const NoteEditorScreen: React.FC<Props> = ({
   const handleColorChange = (col: string) => {
     setColor(col);
     save({ color: col }); // Color change saves immediately
+  };
+
+  // Location reminder fields save immediately (like color), independent of the
+  // text/checklist auto-save path.
+  const handleLocationChange = (fields: Partial<Note>) => {
+    onUpdate(note.id, fields).catch(() => {});
   };
 
   const handleBack = () => {
@@ -371,6 +379,22 @@ export const NoteEditorScreen: React.FC<Props> = ({
               )}
             </View>
           )}
+
+          {/* Attachments: images + voice memos */}
+          <AttachmentSection
+            noteId={note.id}
+            attachments={note.attachments ?? []}
+            textColor={colors.text}
+            borderColor={colors.border}
+          />
+
+          {/* Location-based reminder */}
+          <LocationReminderSection
+            note={note}
+            onChange={handleLocationChange}
+            textColor={colors.text}
+            borderColor={colors.border}
+          />
         </ScrollView>
       </KeyboardAvoidingView>
 

@@ -1,0 +1,107 @@
+name: Android Release (APK → GitHub Release)
+
+# Builds a signed release APK entirely on GitHub Actions runners (no EAS/Expo
+# cloud) and publishes it as a GitHub Release asset, so Obtainium can install
+# and auto-update the app directly from this repo.
+#
+# Trigger: push a version tag, e.g.
+#   git tag v1.1.0 && git push origin v1.1.0
+# Or run manually from the Actions tab (workflow_dispatch) for a test build.
+#
+# Required repository secrets (see RELEASING.md for how to create them):
+#   ANDROID_KEYSTORE_BASE64  - base64 of your release keystore (.jks)
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+#   API_URL                  - default server URL baked into the build (optional)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Optional release tag for a manual build (e.g. v1.1.0-test). Leave blank for an unpublished test build.'
+        required: false
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java (for Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --no-install
+        env:
+          EXPO_PUBLIC_API_URL: ${{ secrets.API_URL }}
+
+      - name: Decode release keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
+          # Fail early with a clear message if the secret is missing/empty.
+          if [ ! -s android/app/release.jks ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is missing or empty. See RELEASING.md."
+            exit 1
+          fi
+
+      - name: Build signed release APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease --no-daemon
+        env:
+          # Consumed by the signingConfig injected below via gradle properties.
+          FRIDGENOTES_UPLOAD_STORE_FILE: release.jks
+          FRIDGENOTES_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FRIDGENOTES_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FRIDGENOTES_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Locate built APK
+        id: apk
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found after build."
+            exit 1
+          fi
+          # Give it a stable, versioned name for the release asset.
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'dev' }}"
+          DEST="FridgeNotes-${TAG}.apk"
+          cp "$APK" "$DEST"
+          echo "path=$DEST" >> $GITHUB_OUTPUT
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fridgenotes-apk
+          path: ${{ steps.apk.outputs.path }}
+
+      - name: Publish GitHub Release
+        # Only publish a Release when triggered by a real version tag.
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.path }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true

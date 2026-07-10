@@ -50,22 +50,22 @@ const writeQueue = async (queue: QueuedOperation[]) => {
   await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(limited)).catch(() => {});
 };
 
-const executeOperation = async (op: QueuedOperation): Promise<void> => {
+// Returns the API result (used to capture created-note ids for remapping).
+const executeOperation = async (op: QueuedOperation): Promise<any> => {
   switch (op.type) {
     case 'create_note':
-      await apiClient.createNote(op.data as any);
-      break;
+      return apiClient.createNote(op.data as any);
     case 'update_note':
-      if (op.noteId) await apiClient.updateNote(op.noteId, op.data as any);
-      break;
+      if (op.noteId) return apiClient.updateNote(op.noteId, op.data as any);
+      return undefined;
     case 'delete_note':
-      if (op.noteId) await apiClient.deleteNote(op.noteId);
-      break;
+      if (op.noteId) return apiClient.deleteNote(op.noteId);
+      return undefined;
     case 'update_checklist_item':
       if (op.noteId && op.itemId) {
-        await apiClient.updateChecklistItem(op.noteId, op.itemId, op.data as any);
+        return apiClient.updateChecklistItem(op.noteId, op.itemId, op.data as any);
       }
-      break;
+      return undefined;
   }
 };
 
@@ -112,12 +112,31 @@ export const useOfflineQueue = () => {
       if (queue.length === 0) return { succeeded: 0, failed: 0 };
 
       const remaining: QueuedOperation[] = [];
+      // Maps an offline note's client_id (its optimistic local id) to the real
+      // server id once its create syncs, so follow-up ops queued against the
+      // client_id target the right note instead of 404ing.
+      const idMap: Record<string, number | string> = {};
 
-      for (const op of queue) {
+      for (let op of queue) {
+        // Rewrite noteId if it referenced an offline note now given a real id.
+        if (op.noteId != null && idMap[String(op.noteId)] != null) {
+          op = { ...op, noteId: idMap[String(op.noteId)] };
+        }
         try {
-          await executeOperation(op);
+          const result = await executeOperation(op);
           succeeded++;
+          // Record client_id -> real id from a create so later ops remap.
+          if (op.type === 'create_note' && result?.id != null) {
+            const clientId = op.data?.client_id;
+            if (clientId && clientId !== result.id) idMap[String(clientId)] = result.id;
+          }
         } catch (err: any) {
+          // A 409 is terminal (server-wins): retrying replays the same stale
+          // edit and conflicts again. Drop it; a reload reconciles to server.
+          if (err?.status === 409) {
+            failed++;
+            continue;
+          }
           failed++;
           if (op.retryCount < MAX_RETRIES) {
             remaining.push({ ...op, retryCount: op.retryCount + 1 });

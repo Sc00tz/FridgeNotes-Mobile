@@ -5,26 +5,36 @@ import { useNetworkStatus } from './useNetworkStatus';
 import { useOfflineQueue } from './useOfflineQueue';
 import { Note, User } from '../types';
 
+// Client-generated id for offline note creation (idempotent create on server).
+const genClientId = () =>
+  `cid_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
 export const useNotes = (currentUser: User | null, isAuthenticated: boolean) => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const queue = useOfflineQueue();
+  // Delta-sync cursor (server_time of the last sync) for incremental catch-up.
+  const syncCursorRef = useRef<string | null>(null);
+  // Holds the latest deltaSync so handleReconnect (defined earlier) can call it
+  // without a stale-closure / definition-order problem.
+  const deltaSyncRef = useRef<(() => Promise<void>) | null>(null);
 
   const showError = useCallback((message: string) => {
     setError(message);
     setTimeout(() => setError(null), 5000);
   }, []);
 
-  // Flush the queue and then reload notes when connectivity is restored
+  // On reconnect: flush queued writes, then pull changes from other devices.
   const handleReconnect = useCallback(async () => {
-    if (queue.queueSize === 0) return;
-    const { failed } = await queue.flushQueue();
-    if (failed === 0) {
-      // Full reload to reconcile any optimistic state
-      await loadNotes();
+    // Flush any queued offline writes first.
+    if (queue.queueSize > 0) {
+      await queue.flushQueue();
     }
+    // Then catch up on changes made elsewhere (incremental if we have a cursor,
+    // full reload otherwise). Reconciles optimistic state and remapped ids.
+    await deltaSyncRef.current?.();
   }, [queue.queueSize, queue.flushQueue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const network = useNetworkStatus(handleReconnect);
@@ -67,8 +77,12 @@ export const useNotes = (currentUser: User | null, isAuthenticated: boolean) => 
     if (!isAuthenticated || !currentUser) return;
     try {
       setLoading(true);
-      const userNotes = await apiClient.getNotes();
+      // Full delta-sync (no cursor): all accessible notes + a cursor to seed
+      // subsequent incremental syncs.
+      const result = await apiClient.getChanges();
+      const userNotes = Array.isArray(result?.changed) ? result.changed : [];
       setNotes(userNotes);
+      if (result?.server_time) syncCursorRef.current = result.server_time;
       return userNotes;
     } catch (err: any) {
       showError('Failed to load notes: ' + err.message);
@@ -77,6 +91,38 @@ export const useNotes = (currentUser: User | null, isAuthenticated: boolean) => 
       setLoading(false);
     }
   }, [isAuthenticated, currentUser, showError]);
+
+  // Incremental catch-up: fetch only what changed/was deleted since the cursor,
+  // merge changed notes and drop tombstoned ones. Falls back to a full load if
+  // there's no cursor yet.
+  const deltaSync = useCallback(async () => {
+    if (!isAuthenticated || !currentUser) return;
+    const since = syncCursorRef.current;
+    if (!since) { await loadNotes(); return; }
+    try {
+      const result = await apiClient.getChanges(since);
+      const changed = Array.isArray(result?.changed) ? result.changed : [];
+      const deleted = Array.isArray(result?.deleted) ? result.deleted : [];
+      if (changed.length || deleted.length) {
+        const deletedSet = new Set(deleted);
+        const changedById = new Map(changed.map(n => [n.id, n]));
+        setNotes(prev => {
+          const merged = prev
+            .filter(n => !deletedSet.has(n.id as number))
+            .map(n => (changedById.has(n.id) ? changedById.get(n.id)! : n));
+          const existing = new Set(merged.map(n => n.id));
+          for (const n of changed) if (!existing.has(n.id)) merged.unshift(n);
+          return merged;
+        });
+      }
+      if (result?.server_time) syncCursorRef.current = result.server_time;
+    } catch {
+      // Non-fatal: a failed catch-up shouldn't disrupt the session.
+    }
+  }, [isAuthenticated, currentUser, loadNotes]);
+
+  // Keep the ref current so handleReconnect always calls the latest deltaSync.
+  deltaSyncRef.current = deltaSync;
 
   useEffect(() => {
     if (!isAuthenticated || !currentUser) return;
@@ -100,10 +146,13 @@ export const useNotes = (currentUser: User | null, isAuthenticated: boolean) => 
 
   const createNote = useCallback(async (noteData: Partial<Note>) => {
     if (!network.isOnline) {
-      // Optimistic note — will be created for real when back online
-      const tempId = `temp_${Date.now()}`;
+      // Optimistic note. Use a client_id as the local id so follow-up offline
+      // edits queue against a stable id the server will recognize on sync
+      // (the server makes create idempotent on client_id and returns it).
+      const clientId = genClientId();
       const optimistic: Note = {
-        id: tempId,
+        id: clientId,
+        client_id: clientId,
         user_id: currentUser?.id ?? 0,
         title: noteData.title ?? '',
         content: noteData.content ?? null,
@@ -122,7 +171,7 @@ export const useNotes = (currentUser: User | null, isAuthenticated: boolean) => 
         _offline: true,
       };
       setNotes(prev => [optimistic, ...prev]);
-      await queue.enqueue('create_note', noteData as Record<string, any>);
+      await queue.enqueue('create_note', { ...noteData, client_id: clientId } as Record<string, any>);
       return optimistic;
     }
 
@@ -154,14 +203,32 @@ export const useNotes = (currentUser: User | null, isAuthenticated: boolean) => 
     }
 
     try {
-      const savedNote = await apiClient.updateNote(noteId, data);
+      // Send base_updated_at (the version this edit is based on) so the server
+      // can detect a concurrent change and reject with 409 instead of clobbering.
+      const existing = notes.find(n => n.id === noteId);
+      const payload: Partial<Note> =
+        existing?.updated_at && data.base_updated_at === undefined
+          ? { ...data, base_updated_at: existing.updated_at }
+          : data;
+      const savedNote = await apiClient.updateNote(noteId, payload);
       setNotes(prev => prev.map(n => n.id === savedNote.id ? savedNote : n));
       if (socketClient.isSocketConnected()) {
         socketClient.emitNoteUpdate(savedNote.id, 'content', savedNote);
       }
       return savedNote;
     } catch (err: any) {
-      // Revert on API failure
+      // Concurrent-edit conflict: server-wins. Adopt the server's current
+      // version locally and tell the user their edit was superseded.
+      if (err?.status === 409) {
+        if (err.current) {
+          setNotes(prev => prev.map(n => n.id === err.current.id ? err.current : n));
+        } else {
+          await loadNotes().catch(() => {});
+        }
+        showError('This note was changed elsewhere; showing the latest version.');
+        return err.current ?? null;
+      }
+      // Revert on other API failures
       await loadNotes().catch(() => {});
       showError('Failed to update note: ' + err.message);
       throw err;
@@ -267,6 +334,7 @@ export const useNotes = (currentUser: User | null, isAuthenticated: boolean) => 
     loading,
     error,
     loadNotes,
+    deltaSync,
     createNote,
     updateNote,
     deleteNote,

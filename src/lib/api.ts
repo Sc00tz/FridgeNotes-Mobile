@@ -1,5 +1,5 @@
 import { getServerUrl } from './config';
-import { Note, Label, User, ChecklistItem } from '../types';
+import { Note, Label, User, ChecklistItem, Attachment, GeocodeResult, SyncChanges } from '../types';
 import CookieManager from '@react-native-cookies/cookies';
 
 class APIClient {
@@ -48,16 +48,21 @@ class APIClient {
     const url = `${baseURL}${endpoint}`;
     const cookieHeader = await this.getSessionCookieHeader(baseURL);
 
+    // Multipart uploads must NOT get a JSON Content-Type — the runtime sets
+    // the multipart boundary itself. Detect FormData bodies and let them pass.
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
     const config: RequestInit = {
       headers: {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         ...options.headers,
       },
       ...options,
     };
 
-    if (config.body && typeof config.body === 'object') {
+    // Only JSON-stringify plain-object bodies (never FormData).
+    if (config.body && typeof config.body === 'object' && !isFormData) {
       config.body = JSON.stringify(config.body);
     }
 
@@ -65,13 +70,18 @@ class APIClient {
     await this.persistCookies(response, baseURL);
 
     if (!response.ok) {
-      let errorData: { error?: string; message?: string } = {};
+      let errorData: { error?: string; message?: string; current?: Note } = {};
       try {
         errorData = await response.json();
       } catch {
         errorData = { message: `HTTP ${response.status}` };
       }
-      throw new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
+      const err = new Error(errorData.error || errorData.message || `HTTP ${response.status}`) as
+        Error & { status?: number; current?: Note };
+      err.status = response.status;
+      // 409 conflict responses carry the server's current note for reconciliation.
+      if (response.status === 409 && errorData.current) err.current = errorData.current;
+      throw err;
     }
 
     const contentType = response.headers.get('content-type');
@@ -126,6 +136,54 @@ class APIClient {
 
   async deleteNote(noteId: number | string): Promise<void> {
     return this.request(`/notes/${noteId}`, { method: 'DELETE' });
+  }
+
+  // Delta-sync: notes changed and deleted since a cursor (omit for full sync).
+  async getChanges(since?: string): Promise<SyncChanges> {
+    const qs = since ? `?since=${encodeURIComponent(since)}` : '';
+    return this.request(`/sync${qs}`);
+  }
+
+  // Attachments
+  async listAttachments(noteId: number | string): Promise<Attachment[]> {
+    return this.request(`/notes/${noteId}/attachments`);
+  }
+
+  // Upload a local file (from image picker / audio recorder) to a note.
+  // In React Native, FormData accepts { uri, name, type } file descriptors.
+  async uploadAttachment(
+    noteId: number | string,
+    file: { uri: string; name: string; type: string },
+  ): Promise<Attachment> {
+    const form = new FormData();
+    // RN's FormData file shape differs from the DOM's; cast through unknown.
+    form.append('file', { uri: file.uri, name: file.name, type: file.type } as unknown as Blob);
+    return this.request(`/notes/${noteId}/attachments`, { method: 'POST', body: form });
+  }
+
+  async deleteAttachment(noteId: number | string, attachmentId: number): Promise<void> {
+    return this.request(`/notes/${noteId}/attachments/${attachmentId}`, { method: 'DELETE' });
+  }
+
+  // Build an authenticated URI + headers for rendering/playing an attachment
+  // (RN <Image>/audio player can take { uri, headers }); attachments require
+  // the session cookie.
+  async getAttachmentSource(
+    noteId: number | string,
+    attachmentId: number,
+  ): Promise<{ uri: string; headers: Record<string, string> }> {
+    const serverUrl = await getServerUrl();
+    const cookieHeader = await this.getSessionCookieHeader(serverUrl || '');
+    return {
+      uri: `${serverUrl}/api/notes/${noteId}/attachments/${attachmentId}`,
+      headers: cookieHeader ? { Cookie: cookieHeader } : {},
+    };
+  }
+
+  // Geocoding: address/business search proxied via the server (Nominatim).
+  async geocode(query: string): Promise<GeocodeResult[]> {
+    if (!query.trim()) return [];
+    return this.request(`/geocode?q=${encodeURIComponent(query.trim())}`);
   }
 
   async pinNote(noteId: number | string, pinned: boolean) {

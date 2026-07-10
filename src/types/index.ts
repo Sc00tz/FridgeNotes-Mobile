@@ -30,8 +30,27 @@ export interface Label {
   updated_at: string;
 }
 
+export interface Attachment {
+  id: number;
+  note_id: number;
+  uploader_id: number;
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  attachment_type: 'image' | 'audio';
+  url: string;
+  created_at: string;
+}
+
+export interface GeocodeResult {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface Note {
   id: number | string;
+  client_id?: string | null;
   user_id: number;
   title: string;
   content: string | null;
@@ -43,16 +62,30 @@ export interface Note {
   reminder_datetime: string | null;
   reminder_completed: boolean;
   reminder_snoozed_until: string | null;
+  // Location-based reminder (geofence target; triggering is client/OS-side).
+  reminder_latitude?: number | null;
+  reminder_longitude?: number | null;
+  reminder_radius?: number | null;
+  reminder_location_name?: string | null;
   created_at: string;
   updated_at: string;
   checklist_items: ChecklistItem[];
   labels: Label[];
+  attachments?: Attachment[];
   is_shared?: boolean;
   shared_with_current_user?: boolean;
   current_user_share_id?: number;
   current_user_access_level?: 'read' | 'edit';
   _offline?: boolean;
   _operationId?: string;
+  // Local echo of the version an edit was based on, for 409 conflict detection.
+  base_updated_at?: string;
+}
+
+export interface SyncChanges {
+  changed: Note[];
+  deleted: number[];
+  server_time: string;
 }
 
 export type RootStackParamList = {
