@@ -30,7 +30,7 @@
       "edgeToEdgeEnabled": true,
       "intentFilters": [
         {
-          "action": "android.intent.action.SEND",
+          "action": "SEND",
           "autoVerify": false,
           "data": [
             {
@@ -41,7 +41,7 @@
             }
           ],
           "category": [
-            "android.intent.category.DEFAULT"
+            "DEFAULT"
           ]
         }
       ],
