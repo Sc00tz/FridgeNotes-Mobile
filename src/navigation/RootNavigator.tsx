@@ -201,7 +201,7 @@ export const RootNavigator: React.FC = () => {
                 name="NoteEditor"
                 options={{ animation: 'slide_from_bottom' }}
               >
-                {({ route }) => {
+                {({ route, navigation }) => {
                   const note = notes.notes.find(n => n.id === route.params.noteId);
                   if (!note) return (
                     <View style={{ flex: 1, backgroundColor: '#111827', justifyContent: 'center', alignItems: 'center' }}>
@@ -211,7 +211,7 @@ export const RootNavigator: React.FC = () => {
                   return (
                     <NoteEditorScreen
                       route={route as any}
-                      navigation={undefined as any}
+                      navigation={navigation as any}
                       note={note}
                       onUpdate={notes.updateNote}
                       onDelete={notes.deleteNote}
@@ -275,10 +275,10 @@ export const RootNavigator: React.FC = () => {
               name="ShareReceiver"
               options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
             >
-              {({ route }) => (
+              {({ route, navigation }) => (
                 <ShareReceiverScreen
                   route={route as any}
-                  navigation={undefined as any}
+                  navigation={navigation as any}
                   onCreateNote={notes.createNote}
                 />
               )}
