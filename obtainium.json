@@ -1,0 +1,14 @@
+{
+  "id": "com.fridgenotes.app",
+  "url": "https://github.com/Sc00tz/FridgeNotes-Mobile",
+  "author": "Sc00tz",
+  "name": "FridgeNotes",
+  "additionalSettings": {
+    "apkFilterRegEx": "FridgeNotes-.*\\.apk",
+    "invertAPKFilter": false,
+    "trackOnly": false,
+    "versionExtractionRegEx": "v(.*)",
+    "matchGroupToUse": "1",
+    "verifyLatestTag": false
+  }
+}
