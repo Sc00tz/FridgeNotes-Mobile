@@ -26,6 +26,10 @@ on:
         required: false
         type: string
 
+# Allow the workflow's GITHUB_TOKEN to create/upload GitHub Releases.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
