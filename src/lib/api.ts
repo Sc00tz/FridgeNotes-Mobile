@@ -76,8 +76,20 @@ class APIClient {
       config.body = JSON.stringify(config.body);
     }
 
-    const response = await fetch(url, config);
+    // Don't auto-follow redirects: an unauthenticated request gets a 302 to
+    // /api/auth/login, and following it re-issues the request against the login
+    // route (405/HTML) — a confusing error. Treat the redirect as an auth
+    // failure instead so the caller can prompt re-login.
+    const response = await fetch(url, { ...config, redirect: 'manual' });
     await this.persistCookies(response);
+
+    // A redirect (or opaqueredirect) to the login flow means the session is
+    // not valid for this request.
+    if (response.type === 'opaqueredirect' || response.status === 302 || response.status === 0) {
+      const authErr = new Error('Your session has expired. Please log in again.') as Error & { status?: number };
+      authErr.status = 401;
+      throw authErr;
+    }
 
     if (!response.ok) {
       let errorData: { error?: string; message?: string; current?: Note } = {};
