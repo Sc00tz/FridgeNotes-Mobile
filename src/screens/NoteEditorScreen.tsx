@@ -109,15 +109,21 @@ export const NoteEditorScreen: React.FC<Props> = ({
     setLocked(false);
   };
 
-  // Toggle private on/off. Making public is immediate. Making private opens a
-  // sheet that checks PIN status itself, so the tap always gives instant
-  // feedback (never blocks on a network call that could stall).
-  const togglePrivate = () => {
+  // Toggle private on/off, matching the web app: making public is immediate;
+  // making private locks immediately when a PIN already exists, and only prompts
+  // to create a PIN the first time (no "continue?" confirmation dialog).
+  const togglePrivate = async () => {
     if (isPrivate) {
       setIsPrivate(false);
       onUpdate(note.id, { is_private: false });
+      return;
+    }
+    const status = await apiClient.getPrivatePinStatus().catch(() => ({ has_private_pin: false }));
+    if (status.has_private_pin) {
+      setIsPrivate(true);
+      onUpdate(note.id, { is_private: true });
     } else {
-      setPinMode('makePrivate');
+      setPinMode('setup');
     }
   };
 
