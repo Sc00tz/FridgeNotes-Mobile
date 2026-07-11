@@ -92,6 +92,11 @@ export const NoteEditorScreen: React.FC<Props> = ({
   const [locked, setLocked] = useState(!!note.is_locked);
   const [pinMode, setPinMode] = useState<null | 'setup' | 'unlock' | 'makePrivate'>(note.is_locked ? 'unlock' : null);
 
+  // Whether the account has a private-notes PIN. Fetched once on mount (in the
+  // background) so the lock toggle can act synchronously without ever blocking
+  // the tap on a network call. Defaults to false (prompt setup) until known.
+  const [hasPin, setHasPin] = useState(false);
+
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const newItemRef = useRef<TextInput>(null);
   const colors = getColor(color);
@@ -99,6 +104,15 @@ export const NoteEditorScreen: React.FC<Props> = ({
   // Cancel the auto-save timer when the screen unmounts
   useEffect(() => () => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+  }, []);
+
+  // Load PIN status once, in the background.
+  useEffect(() => {
+    let alive = true;
+    apiClient.getPrivatePinStatus()
+      .then(s => { if (alive) setHasPin(!!s.has_private_pin); })
+      .catch(() => {});
+    return () => { alive = false; };
   }, []);
 
   // Populate the editor from the full note once unlocked.
@@ -109,17 +123,15 @@ export const NoteEditorScreen: React.FC<Props> = ({
     setLocked(false);
   };
 
-  // Toggle private on/off, matching the web app: making public is immediate;
-  // making private locks immediately when a PIN already exists, and only prompts
-  // to create a PIN the first time (no "continue?" confirmation dialog).
-  const togglePrivate = async () => {
+  // Toggle private on/off. Fully synchronous — never awaits a network call, so
+  // the tap always does something instantly. Uses the PIN status loaded on
+  // mount: if a PIN exists, lock immediately (like web); otherwise prompt to
+  // create one.
+  const togglePrivate = () => {
     if (isPrivate) {
       setIsPrivate(false);
       onUpdate(note.id, { is_private: false });
-      return;
-    }
-    const status = await apiClient.getPrivatePinStatus().catch(() => ({ has_private_pin: false }));
-    if (status.has_private_pin) {
+    } else if (hasPin) {
       setIsPrivate(true);
       onUpdate(note.id, { is_private: true });
     } else {
