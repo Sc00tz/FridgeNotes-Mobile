@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
 import {
   useAudioRecorder,
@@ -23,12 +23,11 @@ export const VoiceMemo: React.FC<Props> = ({ onRecorded, textColor, borderColor,
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [recording, setRecording] = useState(false);
 
-  // Best-effort: leave recording mode on unmount if still active.
-  useEffect(() => () => {
-    if (recorder.isRecording) {
-      recorder.stop().catch(() => {});
-    }
-  }, [recorder]);
+  // NOTE: do NOT stop/touch the recorder in an unmount cleanup. expo-audio's
+  // useAudioRecorder owns the native recorder object and releases it when the
+  // component unmounts; calling recorder.stop() during teardown races that
+  // release and crashes natively ("Cannot use shared object that was already
+  // released") — which happened when leaving a note while this was mounted.
 
   const start = async () => {
     try {
