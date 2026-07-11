@@ -32,6 +32,9 @@ export const NoteCard: React.FC<Props> = ({
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const colors = getColor(note.color);
+  // A private note is shown locked in the list — either the server withheld its
+  // content (is_locked) or it was just marked private locally (is_private).
+  const showLocked = note.is_locked || note.is_private;
 
   const activeItems = note.checklist_items?.filter(i => !i.completed) ?? [];
   const completedItems = note.checklist_items?.filter(i => i.completed) ?? [];
@@ -91,22 +94,25 @@ export const NoteCard: React.FC<Props> = ({
         </View>
       )}
 
-      {/* Locked private note: content withheld until unlocked (tap to open). */}
-      {note.is_locked ? (
+      {/* Locked private note: content withheld in the list until unlocked (tap
+          to open). Show this whenever the note is private — whether it arrived
+          redacted (is_locked) or was just marked private locally (is_private,
+          before the next sync re-fetches it redacted). */}
+      {showLocked ? (
         <Text style={[styles.content, { color: colors.text + '99', fontStyle: 'italic' }]}>
           🔒 Private — tap to unlock
         </Text>
       ) : null}
 
       {/* Text note body */}
-      {!note.is_locked && note.note_type === 'text' && note.content ? (
+      {!showLocked && note.note_type === 'text' && note.content ? (
         <Text style={[styles.content, { color: colors.text }]} numberOfLines={6}>
           {note.content}
         </Text>
       ) : null}
 
       {/* Checklist preview */}
-      {!note.is_locked && note.note_type === 'checklist' && (
+      {!showLocked && note.note_type === 'checklist' && (
         <View style={styles.checklistPreview}>
           {note.checklist_items?.length > 0 && (
             <Text style={[styles.progress, { color: colors.text + '99' }]}>
