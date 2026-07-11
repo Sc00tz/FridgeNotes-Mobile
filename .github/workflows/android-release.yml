@@ -56,6 +56,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set version from git tag
+        # Derive the app's version + versionCode from the release tag so every
+        # release actually reports a new, higher version. Android uses the
+        # integer versionCode to recognize an update; without bumping it, a new
+        # APK looks identical to the installed one and won't upgrade.
+        run: |
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || 'v0.0.0' }}"
+          VERSION="${TAG#v}"                       # strip leading v -> 1.0.2
+          IFS='.' read -r MAJ MIN PAT <<< "$VERSION"
+          MAJ=${MAJ:-0}; MIN=${MIN:-0}; PAT=${PAT:-0}
+          # Monotonic integer: 1.0.2 -> 10002, 1.2.3 -> 10203
+          VERSION_CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))
+          echo "Setting version=$VERSION versionCode=$VERSION_CODE"
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            app.expo.version = '$VERSION';
+            app.expo.android = app.expo.android || {};
+            app.expo.android.versionCode = $VERSION_CODE;
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2) + '\n');
+          "
+
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install
         env:
