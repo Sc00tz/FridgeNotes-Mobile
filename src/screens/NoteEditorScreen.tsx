@@ -129,9 +129,11 @@ export const NoteEditorScreen: React.FC<Props> = ({
   // create one.
   const togglePrivate = () => {
     if (isPrivate) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setIsPrivate(false);
       onUpdate(note.id, { is_private: false });
     } else if (hasPin) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); // "locked" thud
       setIsPrivate(true);
       onUpdate(note.id, { is_private: true });
     } else {
@@ -334,8 +336,13 @@ export const NoteEditorScreen: React.FC<Props> = ({
               </Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={togglePrivate} style={styles.toolbarButton}>
-            <Text style={styles.toolbarIcon}>{isPrivate ? '🔒' : '🔓'}</Text>
+          <TouchableOpacity
+            onPress={togglePrivate}
+            style={[styles.toolbarButton, isPrivate && styles.privateActive]}
+          >
+            <Text style={[styles.toolbarIcon, isPrivate && styles.privateActiveIcon]}>
+              {isPrivate ? '🔒' : '🔓'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleDelete} style={styles.toolbarButton}>
             <Text style={styles.toolbarIcon}>🗑</Text>
@@ -576,6 +583,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   toolbarButton: { padding: 8 },
+  // Highlight the lock button when the note is private so the state is obvious
+  // (the 🔒/🔓 emojis alone look too similar).
+  privateActive: { backgroundColor: '#3b82f6', borderRadius: 8 },
+  privateActiveIcon: { opacity: 1 },
   backText: { fontSize: 17, fontWeight: '500' },
   saveStatus: {
     flex: 1,
