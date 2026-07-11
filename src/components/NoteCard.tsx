@@ -91,15 +91,22 @@ export const NoteCard: React.FC<Props> = ({
         </View>
       )}
 
+      {/* Locked private note: content withheld until unlocked (tap to open). */}
+      {note.is_locked ? (
+        <Text style={[styles.content, { color: colors.text + '99', fontStyle: 'italic' }]}>
+          🔒 Private — tap to unlock
+        </Text>
+      ) : null}
+
       {/* Text note body */}
-      {note.note_type === 'text' && note.content ? (
+      {!note.is_locked && note.note_type === 'text' && note.content ? (
         <Text style={[styles.content, { color: colors.text }]} numberOfLines={6}>
           {note.content}
         </Text>
       ) : null}
 
       {/* Checklist preview */}
-      {note.note_type === 'checklist' && (
+      {!note.is_locked && note.note_type === 'checklist' && (
         <View style={styles.checklistPreview}>
           {note.checklist_items?.length > 0 && (
             <Text style={[styles.progress, { color: colors.text + '99' }]}>
@@ -146,6 +153,7 @@ export const NoteCard: React.FC<Props> = ({
           {note.updated_at ? new Date(note.updated_at).toLocaleDateString() : ''}
         </Text>
         <View style={styles.footerBadges}>
+          {note.is_private && <Text style={styles.badge}>🔒</Text>}
           {note.pinned && <Text style={styles.badge}>📌</Text>}
           {note.is_shared && <Text style={styles.badge}>👥</Text>}
           {note.attachments && note.attachments.length > 0 && <Text style={styles.badge}>📎</Text>}

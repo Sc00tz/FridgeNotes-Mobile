@@ -59,6 +59,8 @@ export interface Note {
   position: number;
   pinned: boolean;
   archived: boolean;
+  is_private?: boolean;
+  is_locked?: boolean; // server withheld content pending PIN unlock
   reminder_datetime: string | null;
   reminder_completed: boolean;
   reminder_snoozed_until: string | null;

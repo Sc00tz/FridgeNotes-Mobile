@@ -201,6 +201,20 @@ class APIClient {
     return this.request(`/geocode?q=${encodeURIComponent(query.trim())}`);
   }
 
+  // Private notes / PIN
+  async getPrivatePinStatus(): Promise<{ has_private_pin: boolean }> {
+    return this.request('/auth/private-pin');
+  }
+
+  async setPrivatePin(data: { new_pin: string; password?: string; current_pin?: string }) {
+    return this.request('/auth/private-pin', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  // Unlock a private note with the PIN; returns the full (unredacted) note.
+  async unlockNote(noteId: number | string, pin: string): Promise<Note> {
+    return this.request(`/notes/${noteId}/unlock`, { method: 'POST', body: JSON.stringify({ pin }) });
+  }
+
   async pinNote(noteId: number | string, pinned: boolean) {
     return this.request(`/notes/${noteId}/pin`, {
       method: 'PUT',

@@ -22,6 +22,8 @@ import { ShareSheet } from '../components/ShareSheet';
 import { ReminderPickerSheet } from '../components/ReminderPickerSheet';
 import { AttachmentSection } from '../components/AttachmentSection';
 import { LocationReminderSection } from '../components/LocationReminderSection';
+import { PinSheet } from '../components/PinSheet';
+import { apiClient } from '../lib/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NoteEditor'> & {
   note: Note;
@@ -84,6 +86,11 @@ export const NoteEditorScreen: React.FC<Props> = ({
   const [showReminderPicker, setShowReminderPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [isPrivate, setIsPrivate] = useState(!!note.is_private);
+  // Locked notes arrive with content withheld; unlock reveals it. `locked`
+  // gates the editor body until the PIN is entered.
+  const [locked, setLocked] = useState(!!note.is_locked);
+  const [pinMode, setPinMode] = useState<null | 'setup' | 'unlock'>(note.is_locked ? 'unlock' : null);
 
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const newItemRef = useRef<TextInput>(null);
@@ -94,9 +101,35 @@ export const NoteEditorScreen: React.FC<Props> = ({
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
   }, []);
 
+  // Populate the editor from the full note once unlocked.
+  const applyUnlocked = (full: typeof note) => {
+    setTitle(full.title ?? '');
+    setContent(full.content ?? '');
+    setItems(full.checklist_items ?? []);
+    setLocked(false);
+  };
+
+  // Toggle private on/off. Turning on for the first time (no PIN yet) opens the
+  // setup sheet; the server marks it private once the PIN exists.
+  const togglePrivate = async () => {
+    if (!isPrivate) {
+      const status = await apiClient.getPrivatePinStatus().catch(() => ({ has_private_pin: false }));
+      if (!status.has_private_pin) { setPinMode('setup'); return; }
+      setIsPrivate(true);
+      onUpdate(note.id, { is_private: true });
+    } else {
+      setIsPrivate(false);
+      onUpdate(note.id, { is_private: false });
+    }
+  };
+
   const save = useCallback(async (
     overrides: Partial<{ title: string; content: string; color: string; items: ChecklistItem[] }> = {},
   ) => {
+    // Never save while the note is still locked — its content isn't loaded,
+    // so writing would blank the real (withheld) content.
+    if (locked) return;
+
     const t = overrides.title ?? title;
     const c = overrides.content ?? content;
     const col = overrides.color ?? color;
@@ -117,7 +150,7 @@ export const NoteEditorScreen: React.FC<Props> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [note.id, note.note_type, title, content, color, items, onUpdate]);
+  }, [note.id, note.note_type, title, content, color, items, onUpdate, locked]);
 
   // Schedule an auto-save whenever editable fields change
   const scheduleAutoSave = useCallback((
@@ -285,6 +318,9 @@ export const NoteEditorScreen: React.FC<Props> = ({
               </Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity onPress={togglePrivate} style={styles.toolbarButton}>
+            <Text style={styles.toolbarIcon}>{isPrivate ? '🔒' : '🔓'}</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleDelete} style={styles.toolbarButton}>
             <Text style={styles.toolbarIcon}>🗑</Text>
           </TouchableOpacity>
@@ -307,6 +343,18 @@ export const NoteEditorScreen: React.FC<Props> = ({
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
+          {locked ? (
+            /* Locked private note: content withheld until the PIN is entered. */
+            <View style={styles.lockedBox}>
+              <Text style={[styles.lockedTitle, { color: colors.text }]}>{note.title || 'Private note'}</Text>
+              <Text style={styles.lockedIcon}>🔒</Text>
+              <Text style={[styles.lockedMsg, { color: colors.text + '99' }]}>This note is private</Text>
+              <TouchableOpacity style={styles.unlockBtn} onPress={() => setPinMode('unlock')}>
+                <Text style={styles.unlockBtnText}>Unlock</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+          <>
           {/* Title */}
           <TextInput
             style={[styles.titleInput, { color: colors.text }]}
@@ -395,6 +443,8 @@ export const NoteEditorScreen: React.FC<Props> = ({
             textColor={colors.text}
             borderColor={colors.border}
           />
+          </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -435,6 +485,22 @@ export const NoteEditorScreen: React.FC<Props> = ({
           }}
           onClear={async () => {
             await onClearReminder(note.id);
+          }}
+        />
+      )}
+
+      {/* PIN sheet: unlock a locked note, or set up a PIN when making private */}
+      {pinMode && (
+        <PinSheet
+          visible={!!pinMode}
+          mode={pinMode}
+          noteId={note.id}
+          onClose={() => setPinMode(null)}
+          onUnlocked={(full) => applyUnlocked(full)}
+          onPinSet={() => {
+            // PIN created via "make private" -> mark this note private now.
+            setIsPrivate(true);
+            onUpdate(note.id, { is_private: true });
           }}
         />
       )}
@@ -510,6 +576,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     padding: 0,
   },
+  lockedBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 14 },
+  lockedTitle: { fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  lockedIcon: { fontSize: 40 },
+  lockedMsg: { fontSize: 15 },
+  unlockBtn: { backgroundColor: '#3b82f6', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 8 },
+  unlockBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   contentInput: {
     fontSize: 16,
     lineHeight: 24,
