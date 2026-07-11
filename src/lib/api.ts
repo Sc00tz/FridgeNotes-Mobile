@@ -76,16 +76,28 @@ class APIClient {
       config.body = JSON.stringify(config.body);
     }
 
-    // Don't auto-follow redirects: an unauthenticated request gets a 302 to
-    // /api/auth/login, and following it re-issues the request against the login
-    // route (405/HTML) — a confusing error. Treat the redirect as an auth
-    // failure instead so the caller can prompt re-login.
-    const response = await fetch(url, { ...config, redirect: 'manual' });
+    // Time out stalled requests so callers never hang forever (RN fetch has no
+    // default timeout). 20s is generous for uploads on slow links.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    let response: Response;
+    try {
+      response = await fetch(url, { ...config, signal: controller.signal });
+    } catch (e: any) {
+      clearTimeout(timeout);
+      if (e?.name === 'AbortError') {
+        const t = new Error('Request timed out') as Error & { status?: number };
+        t.status = 0;
+        throw t;
+      }
+      throw e;
+    }
+    clearTimeout(timeout);
     await this.persistCookies(response);
 
-    // A redirect (or opaqueredirect) to the login flow means the session is
-    // not valid for this request.
-    if (response.type === 'opaqueredirect' || response.status === 302 || response.status === 0) {
+    // If fetch followed a redirect to the login flow, the session is invalid.
+    if (response.url && response.url.includes('/api/auth/login') && !endpoint.includes('/auth/login')) {
       const authErr = new Error('Your session has expired. Please log in again.') as Error & { status?: number };
       authErr.status = 401;
       throw authErr;

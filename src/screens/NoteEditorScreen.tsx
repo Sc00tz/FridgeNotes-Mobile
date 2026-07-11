@@ -90,7 +90,7 @@ export const NoteEditorScreen: React.FC<Props> = ({
   // Locked notes arrive with content withheld; unlock reveals it. `locked`
   // gates the editor body until the PIN is entered.
   const [locked, setLocked] = useState(!!note.is_locked);
-  const [pinMode, setPinMode] = useState<null | 'setup' | 'unlock'>(note.is_locked ? 'unlock' : null);
+  const [pinMode, setPinMode] = useState<null | 'setup' | 'unlock' | 'makePrivate'>(note.is_locked ? 'unlock' : null);
 
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const newItemRef = useRef<TextInput>(null);
@@ -109,17 +109,15 @@ export const NoteEditorScreen: React.FC<Props> = ({
     setLocked(false);
   };
 
-  // Toggle private on/off. Turning on for the first time (no PIN yet) opens the
-  // setup sheet; the server marks it private once the PIN exists.
-  const togglePrivate = async () => {
-    if (!isPrivate) {
-      const status = await apiClient.getPrivatePinStatus().catch(() => ({ has_private_pin: false }));
-      if (!status.has_private_pin) { setPinMode('setup'); return; }
-      setIsPrivate(true);
-      onUpdate(note.id, { is_private: true });
-    } else {
+  // Toggle private on/off. Making public is immediate. Making private opens a
+  // sheet that checks PIN status itself, so the tap always gives instant
+  // feedback (never blocks on a network call that could stall).
+  const togglePrivate = () => {
+    if (isPrivate) {
       setIsPrivate(false);
       onUpdate(note.id, { is_private: false });
+    } else {
+      setPinMode('makePrivate');
     }
   };
 
@@ -489,7 +487,7 @@ export const NoteEditorScreen: React.FC<Props> = ({
         />
       )}
 
-      {/* PIN sheet: unlock a locked note, or set up a PIN when making private */}
+      {/* PIN sheet: unlock a locked note, set up a PIN, or make this note private */}
       {pinMode && (
         <PinSheet
           visible={!!pinMode}
@@ -497,8 +495,11 @@ export const NoteEditorScreen: React.FC<Props> = ({
           noteId={note.id}
           onClose={() => setPinMode(null)}
           onUnlocked={(full) => applyUnlocked(full)}
+          onMakePrivate={() => {
+            setIsPrivate(true);
+            onUpdate(note.id, { is_private: true });
+          }}
           onPinSet={() => {
-            // PIN created via "make private" -> mark this note private now.
             setIsPrivate(true);
             onUpdate(note.id, { is_private: true });
           }}
