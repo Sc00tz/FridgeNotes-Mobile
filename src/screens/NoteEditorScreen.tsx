@@ -359,12 +359,16 @@ export const NoteEditorScreen: React.FC<Props> = ({
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          // iOS: shift content so the caret stays above the keyboard.
+          automaticallyAdjustKeyboardInsets
         >
           {locked ? (
             /* Locked private note: content withheld until the PIN is entered. */
@@ -599,7 +603,7 @@ const styles = StyleSheet.create({
   toolbarIcon: { fontSize: 20, padding: 6 },
   colorPickerRow: { borderBottomWidth: 1 },
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 120 },
+  scrollContent: { padding: 16, paddingBottom: 300 },
   titleInput: {
     fontSize: 22,
     fontWeight: '700',
